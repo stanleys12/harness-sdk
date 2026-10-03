@@ -19,7 +19,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from strands.memory.extraction.model_extractor import ModelExtractor
+from strands.memory.extraction.model_extractor import DEFAULT_SYSTEM_PROMPT, ModelExtractor
 from strands.memory.extraction.types import ExtractionResult, ExtractorContext
 from strands.types.content import Message
 from tests.fixtures.mocked_model_provider import MockedModelProvider
@@ -36,19 +36,23 @@ def _assistant_text(text: str) -> Message:
 
 
 class _RecordingModel(MockedModelProvider):
-    """A fake model that counts how many times ``stream`` is invoked.
+    """A fake model that counts ``stream`` calls and records their system prompts.
 
     Used to assert the extractor short-circuits an empty batch without ever
-    calling the model.
+    calling the model, and to inspect the system prompt it sends.
     """
 
     def __init__(self, agent_responses: Any) -> None:
         super().__init__(agent_responses)
         self.stream_calls = 0
+        self.system_prompts: list[str | None] = []
 
-    async def stream(self, *args: Any, **kwargs: Any):  # type: ignore[override]
+    async def stream(
+        self, messages: Any, tool_specs: Any = None, system_prompt: str | None = None, *args: Any, **kwargs: Any
+    ):  # type: ignore[override]
         self.stream_calls += 1
-        async for event in super().stream(*args, **kwargs):
+        self.system_prompts.append(system_prompt)
+        async for event in super().stream(messages, tool_specs, system_prompt, *args, **kwargs):
             yield event
 
 
@@ -118,6 +122,30 @@ async def test_returns_empty_for_an_empty_message_batch_without_calling_the_mode
 
     assert entries == []
     assert model.stream_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_uses_the_default_system_prompt_when_none_is_given():
+    model = _RecordingModel([_assistant_text('[{"content": "fact"}]')])
+    extractor = ModelExtractor(model=model)
+
+    await extractor.extract([_user_turn("x")])
+
+    assert model.system_prompts == [DEFAULT_SYSTEM_PROMPT]
+
+
+@pytest.mark.asyncio
+async def test_custom_system_prompt_keeps_the_json_output_instruction():
+    """Regression test for https://github.com/strands-agents/harness-sdk/issues/3578."""
+    model = _RecordingModel([_assistant_text('[{"content": "User prefers dark mode"}]')])
+    extractor = ModelExtractor(model=model, system_prompt="Extract user preferences.")
+
+    entries = await extractor.extract([_user_turn("I like dark mode")])
+
+    assert entries == [ExtractionResult(content="User prefers dark mode")]
+    (system_prompt,) = model.system_prompts
+    assert system_prompt.startswith("Extract user preferences.")
+    assert "Return ONLY a JSON array of objects" in system_prompt
 
 
 @pytest.mark.asyncio

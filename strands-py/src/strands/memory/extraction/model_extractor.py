@@ -20,14 +20,17 @@ from .types import ExtractionResult, ExtractorContext
 
 logger = logging.getLogger(__name__)
 
-# Default instruction guiding the model to emit discrete, durable facts as a JSON array.
-DEFAULT_SYSTEM_PROMPT = (
-    "You extract durable facts worth remembering across future conversations from a transcript.\n"
-    "\n"
+# Output format ``_parse_entries`` depends on; appended to custom system prompts too.
+_OUTPUT_CONTRACT = (
     'Return ONLY a JSON array of objects, each: {"content": string}. Each object is one discrete, '
     "self-contained fact (a preference, decision, or stable detail about the user or task). Do not "
     "include transient chit-chat, questions, or anything already obvious. If there is nothing worth "
     "remembering, return []."
+)
+
+# Default instruction guiding the model to emit discrete, durable facts as a JSON array.
+DEFAULT_SYSTEM_PROMPT = (
+    f"You extract durable facts worth remembering across future conversations from a transcript.\n\n{_OUTPUT_CONTRACT}"
 )
 
 
@@ -52,11 +55,12 @@ class ModelExtractor:
         Args:
             model: Model used to extract facts. Resolution order: this ``model`` >
                 :attr:`ExtractorContext.default_model` (``agent.aux_model`` > ``agent.model``).
-            system_prompt: System prompt steering what counts as a fact. Defaults
-                to a general fact-extraction prompt.
+            system_prompt: System prompt steering what counts as a fact. The JSON
+                output format instruction is always appended. Defaults to a general
+                fact-extraction prompt.
         """
         self._model = model
-        self._system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
+        self._system_prompt = f"{system_prompt}\n\n{_OUTPUT_CONTRACT}" if system_prompt else DEFAULT_SYSTEM_PROMPT
 
     async def extract(self, messages: list[Message], context: ExtractorContext | None = None) -> list[ExtractionResult]:
         """Extract entries from a batch of messages.
