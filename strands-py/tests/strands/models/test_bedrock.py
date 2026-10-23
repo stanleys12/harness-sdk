@@ -1818,6 +1818,23 @@ async def test_stream_non_guardrail_stop_reason_doesnt_redact(bedrock_client, mo
     assert tru_chunks == exp_chunks
 
 
+@pytest.mark.parametrize(
+    ("assessment", "expected"),
+    [
+        ({"topicPolicy": {"topics": [{"name": "Cactus", "type": "DENY", "action": "BLOCKED"}]}}, True),
+        ({"topicPolicy": {"topics": [{"name": "Cactus", "action": "BLOCKED", "detected": True}]}}, True),
+        ({"wordPolicy": {"customWords": [{"match": "CACTUS", "action": "NONE", "detected": True}]}}, False),
+        ({"sensitiveInformationPolicy": {"piiEntities": [{"action": "ANONYMIZED", "detected": True}]}}, False),
+    ],
+)
+def test_has_blocked_policy(model, assessment, expected):
+    """`detected` is optional in the Bedrock API, so `action` alone decides.
+
+    Guards against https://github.com/strands-agents/harness-sdk/issues/3617.
+    """
+    assert model._has_blocked_policy(assessment) is expected
+
+
 @pytest.mark.asyncio
 async def test_stream_guardrails_masked_content_does_not_redact(bedrock_client, model, messages, alist):
     """Bedrock reports guardrail_intervened even when a policy only ANONYMIZED (masked) content.

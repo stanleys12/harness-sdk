@@ -1385,9 +1385,9 @@ class BedrockModel(Model):
             input_assessment = guardrail_data.get("inputAssessment", {})
             output_assessments = guardrail_data.get("outputAssessments", {})
 
-            if any(self._find_detected_and_blocked_policy(assessment) for assessment in input_assessment.values()):
+            if any(self._has_blocked_policy(assessment) for assessment in input_assessment.values()):
                 return True
-            if any(self._find_detected_and_blocked_policy(assessment) for assessment in output_assessments.values()):
+            if any(self._has_blocked_policy(assessment) for assessment in output_assessments.values()):
                 return True
             return False
 
@@ -1863,28 +1863,27 @@ class BedrockModel(Model):
                 metadata["metadata"]["trace"] = response["trace"]
             yield metadata
 
-    def _find_detected_and_blocked_policy(self, input: Any) -> bool:
-        """Recursively checks if the assessment contains a detected and blocked guardrail.
+    def _has_blocked_policy(self, input: Any) -> bool:
+        """Recursively checks if the assessment contains a blocked guardrail.
 
         Args:
             input: The assessment to check.
 
         Returns:
-            True if the input contains a detected and blocked guardrail, False otherwise.
+            True if the input contains a blocked guardrail, False otherwise.
 
         """
         # Check if input is a dictionary
         if isinstance(input, dict):
-            # Check if current dictionary has action: BLOCKED and detected: true
-            if input.get("action") == "BLOCKED" and input.get("detected") and isinstance(input.get("detected"), bool):
+            if input.get("action") == "BLOCKED":
                 return True
 
             # Otherwise, recursively check all values in the dictionary
-            return self._find_detected_and_blocked_policy(input.values())
+            return self._has_blocked_policy(input.values())
 
         elif isinstance(input, (list, ValuesView)):
             # Handle case where input is a list or dict_values
-            return any(self._find_detected_and_blocked_policy(item) for item in input)
+            return any(self._has_blocked_policy(item) for item in input)
         # Otherwise return False
         return False
 
